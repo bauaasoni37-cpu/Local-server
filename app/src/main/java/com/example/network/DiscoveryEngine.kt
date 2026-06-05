@@ -50,7 +50,25 @@ class DiscoveryEngine(
                 for (ip in loopbacks) {
                     for (port in ports) {
                         if (!isActive) break
-                        val service = ServiceFingerprinter.checkAndFingerprint(ip, port)
+                        
+                        // Favor device IP if it has the port open
+                        var targetIp = ip
+                        val deviceIp = NetworkUtils.getLocalIpAddress(context)
+                        if (deviceIp != null && deviceIp != "127.0.0.1" && deviceIp != "localhost") {
+                            val isOpenOnDeviceIp = try {
+                                Socket().use { socket ->
+                                    socket.connect(InetSocketAddress(deviceIp, port), 100)
+                                    true
+                                }
+                            } catch (e: Exception) {
+                                false
+                            }
+                            if (isOpenOnDeviceIp) {
+                                targetIp = deviceIp
+                            }
+                        }
+
+                        val service = ServiceFingerprinter.checkAndFingerprint(targetIp, port)
                         if (service != null) {
                             addDiscoveredDevice(service)
                         }

@@ -80,6 +80,46 @@ object ServiceFingerprinter {
             }
         }
 
+        // Fallback raw HTTP probe if OkHttp failed (e.g. strict security, SSL handshake refusal, etc.)
+        try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(ipAddress, port), 400)
+                val out: OutputStream = socket.getOutputStream()
+                val request = "GET / HTTP/1.1\r\n" +
+                        "Host: $ipAddress:$port\r\n" +
+                        "User-Agent: Mozilla/5.0 (Android; LAN Discovery)\r\n" +
+                        "Connection: close\r\n\r\n"
+                out.write(request.toByteArray())
+                out.flush()
+
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val statusLine = reader.readLine() ?: ""
+                if (statusLine.uppercase().startsWith("HTTP/")) {
+                    var serverHeader = ""
+                    var line: String?
+                    var count = 0
+                    while (reader.readLine().also { line = it } != null && count < 20) {
+                        count++
+                        if (line.isNullOrBlank()) break
+                        if (line!!.startsWith("Server:", ignoreCase = true)) {
+                            serverHeader = line!!.substringAfter(":").trim()
+                        }
+                    }
+                    val classification = classify(ipAddress, port, serverHeader, "", "")
+                    return DiscoveredService(
+                        name = classification.name,
+                        serviceType = classification.type,
+                        ipAddress = ipAddress,
+                        port = port,
+                        protocol = "http",
+                        latencyMs = latency
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+
         return DiscoveredService(
             name = "TCP Server",
             serviceType = "Generic TCP Server",
@@ -159,7 +199,7 @@ object ServiceFingerprinter {
             return ClassifiedResult("LM Studio AI", "LM Studio")
         }
 
-        if (serverLower.contains("werkzeug") || serverLower.contains("gunicorn") || bodyLower.contains("flask") || poweredLower.contains("flask")) {
+        if (serverLower.contains("werkzeug") || serverLower.contains("gunicorn") || bodyLower.contains("flask") || poweredLower.contains("flask") || bodyLower.contains("werkzeug")) {
             return ClassifiedResult("Flask App", "Flask")
         }
 
@@ -213,5 +253,16 @@ object ServiceFingerprinter {
         }
 
         return ClassifiedResult("HTTP Server", "Generic HTTP")
+    }
+
+    fun determineFramework(
+        ipAddress: String,
+        port: Int,
+        serverHeader: String,
+        poweredByHeader: String,
+        body: String
+    ): Pair<String, String> {
+        val res = classify(ipAddress, port, serverHeader, poweredByHeader, body)
+        return Pair(res.name, res.type)
     }
 }

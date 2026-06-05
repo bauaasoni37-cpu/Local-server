@@ -74,8 +74,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun addDiscoveredService(service: DiscoveredService) {
         val currentList = _discoveredServices.value
-        if (!currentList.any { it.ipAddress == service.ipAddress && it.port == service.port }) {
-            val newList = currentList + service
+        
+        // Prefer device IP over localhost deduplication
+        val isServiceLoopback = service.ipAddress == "127.0.0.1" || service.ipAddress == "localhost"
+        
+        if (isServiceLoopback) {
+            // If the same port is already loaded on a real network IP, skip loopback
+            val hasRealIpSamePort = currentList.any { !it.ipAddress.let { ip -> ip == "127.0.0.1" || ip == "localhost" } && it.port == service.port }
+            if (hasRealIpSamePort) return
+        } else {
+            // If this is a real IP and we previously registered a loopback server on the same port, remove the loopback one
+            val loopbackIndex = currentList.indexOfFirst { (it.ipAddress == "127.0.0.1" || it.ipAddress == "localhost") && it.port == service.port }
+            if (loopbackIndex != -1) {
+                val mutable = currentList.toMutableList()
+                mutable.removeAt(loopbackIndex)
+                _discoveredServices.value = mutable
+            }
+        }
+
+        val updatedList = _discoveredServices.value
+        if (!updatedList.any { it.ipAddress == service.ipAddress && it.port == service.port }) {
+            val newList = updatedList + service
             _discoveredServices.value = newList
 
             viewModelScope.launch {
