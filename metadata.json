@@ -1,0 +1,6 @@
+{
+  "name": "Local Node",
+  "description": "A professional LAN service discovery application that automatically detects and connects to local servers running on the same device or local network.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
